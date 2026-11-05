@@ -18,6 +18,7 @@ pub fn all() -> Vec<poise::Command<Data, Error>> {
         mugcoin::mugcoin(),
         tournament::tournament(),
         linkfix::linkfix(),
+        linkfix::delete_fixed_message(),
     ];
     cmds.extend(anilist::commands());
     cmds
