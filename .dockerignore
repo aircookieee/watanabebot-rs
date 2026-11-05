@@ -1,0 +1,6 @@
+target
+data
+node_modules
+dist-web
+.env
+.git
