@@ -15,8 +15,10 @@ tournament betting.
 - **Link fixing** (embed-fixer style): Twitter/X, Instagram, TikTok, Reddit, Bluesky, Pixiv and
   Threads links are rewritten to embed-friendly mirrors by default, with more sites available.
   The original message is deleted and reposted through a webhook under the author's name and
-  avatar, with pings disabled. When that is not possible (missing permissions, PluralKit
-  messages, polls, very long messages) the bot replies with the fixed links instead.
+  avatar, with pings disabled. When that is not possible (missing permissions, polls, very long
+  messages) the bot replies with the fixed links instead. Messages from bots and webhooks
+  (including PluralKit) are never touched. Like embed-fixer, fixed links lose their query string
+  (tracking ids, share tokens) except parameters the page needs, such as Instagram `img_index`.
   Configure with `/linkfix` (sites, replacement domains, webhook/reply mode, ignored channels,
   custom rules). Authors can remove a repost with the "Delete fixed message" context menu.
 - **AniList**: `/anime`, `/manga`, `/anilist register|unregister|update`, plus `!al`, `!alm`,

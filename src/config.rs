@@ -21,8 +21,6 @@ pub struct Config {
     pub channels: ChannelConfig,
     pub paths: PathConfig,
     pub reactions: ReactionConfig,
-    /// PluralKit's bot user id. Messages proxied by PluralKit arrive as webhooks.
-    pub pluralkit_uid: u64,
     pub currency: CurrencyConfig,
     pub admin_user_id: Option<UserId>,
     pub tournament_operator_id: Option<UserId>,
@@ -151,7 +149,6 @@ impl Config {
                 smol_watashi: EmojiId::new(env_u64("EMOJI_SMOL_WATASHI_ID").unwrap_or(1247638021482872944)),
                 yes_watanabe: EmojiId::new(env_u64("EMOJI_YES_WATANABE_ID").unwrap_or(1247638018949644298)),
             },
-            pluralkit_uid: 466378653216014359,
             currency: CurrencyConfig {
                 guild_id: env_u64("CURRENCY_GUILD_ID").map(GuildId::new),
                 starting_balance: env_i64("CURRENCY_STARTING_BALANCE", 500),

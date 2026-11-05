@@ -17,12 +17,11 @@ use poise::serenity_prelude as serenity;
 use regex::Regex;
 use serenity::{
     ChannelId, CreateAllowedMentions, CreateAttachment, CreateMessage, CreateWebhook, EditMessage,
-    ExecuteWebhook, FullEvent, GuildId, Message, MessageType, Permissions, Webhook, WebhookId,
+    ExecuteWebhook, FullEvent, GuildId, Message, MessageType, Permissions, Webhook,
 };
 use url::Url;
 
 use crate::bot::{Data, Error};
-use crate::config;
 use crate::db::linkfix::{FixMode, GuildLinkConfig};
 use crate::db::Db;
 
@@ -47,8 +46,9 @@ pub struct Site {
     roots: &'static [&'static str],
     /// Regexes matched against `host + path` (lowercased host, anchored by the pattern itself).
     patterns: &'static [&'static str],
-    /// Query parameters removed from the rewritten link (`*` removes every parameter).
-    drop_params: &'static [&'static str],
+    /// The only query parameters kept on the rewritten link; everything else (tracking ids,
+    /// share tokens, ...) is removed, as embed-fixer does.
+    keep_params: &'static [&'static str],
     /// Twitch: `clips.twitch.tv/<id>` becomes `<domain>/clip/<id>`.
     clip_prefix: bool,
 }
@@ -65,7 +65,7 @@ pub static SITES: &[Site] = &[
             r"^(?:www\.|mobile\.)?(?:twitter\.com|x\.com|nitter\.net)/[A-Za-z0-9_]+/status(?:es)?/\d+(?:/(?:photo|video)/\d+)?/?$",
             r"^(?:www\.|mobile\.)?(?:twitter\.com|x\.com)/i/(?:web/)?status/\d+/?$",
         ],
-        drop_params: &["s", "t"],
+        keep_params: &[],
         clip_prefix: false,
     },
     Site {
@@ -87,7 +87,8 @@ pub static SITES: &[Site] = &[
             r"^(?:www\.)?instagram\.com/[\w.]+/(?:p|reels?)/[\w-]+/?$",
             r"^(?:www\.)?instagram\.com/stories/[\w.]+/\d+/?$",
         ],
-        drop_params: &["igsh", "igshid", "ig_rid"],
+        // Selects the picture in a carousel post.
+        keep_params: &["img_index"],
         clip_prefix: false,
     },
     Site {
@@ -101,7 +102,7 @@ pub static SITES: &[Site] = &[
             r"^(?:www\.)?tiktok\.com/(?:t/\w+|@[\w.]+/(?:video|photo)/\d+)/?$",
             r"^v[mt]\.tiktok\.com/[\w-]+/?$",
         ],
-        drop_params: &["*"],
+        keep_params: &[],
         clip_prefix: false,
     },
     Site {
@@ -115,7 +116,7 @@ pub static SITES: &[Site] = &[
             r"^(?:www\.|old\.|np\.|new\.|m\.)?reddit\.com/(?:r|u|user)/[\w-]+/comments/\w+(?:/[^/]*){0,2}$",
             r"^(?:www\.|old\.|np\.|new\.|m\.)?reddit\.com/r/[\w-]+/s/\w+/?$",
         ],
-        drop_params: &["share_id", "ref", "ref_source", "rdt"],
+        keep_params: &[],
         clip_prefix: false,
     },
     Site {
@@ -126,7 +127,7 @@ pub static SITES: &[Site] = &[
         alternatives: &["fxbsky.app"],
         roots: &["bsky.app"],
         patterns: &[r"^(?:www\.)?bsky\.app/profile/[\w.:-]+/post/\w+/?$"],
-        drop_params: &[],
+        keep_params: &[],
         clip_prefix: false,
     },
     Site {
@@ -137,7 +138,7 @@ pub static SITES: &[Site] = &[
         alternatives: &[],
         roots: &["pixiv.net"],
         patterns: &[r"^(?:www\.)?pixiv\.net/(?:[a-z]{2}/)?(?:artworks|users)/\d+/?$"],
-        drop_params: &[],
+        keep_params: &[],
         clip_prefix: false,
     },
     Site {
@@ -152,7 +153,7 @@ pub static SITES: &[Site] = &[
             r"^(?:www\.)?threads\.(?:net|com)/share/[\w-]+/?$",
             r"^(?:www\.)?threads\.(?:net|com)/@[\w.]+/?$",
         ],
-        drop_params: &["*"],
+        keep_params: &[],
         clip_prefix: false,
     },
     Site {
@@ -166,7 +167,7 @@ pub static SITES: &[Site] = &[
             r"^(?:www\.)?tumblr\.com/[\w-]+/\d+(?:/[\w-]+)?/?$",
             r"^[\w-]+\.tumblr\.com/post/\d+(?:/[\w-]+)?/?$",
         ],
-        drop_params: &[],
+        keep_params: &[],
         clip_prefix: false,
     },
     Site {
@@ -177,7 +178,7 @@ pub static SITES: &[Site] = &[
         alternatives: &[],
         roots: &["deviantart.com"],
         patterns: &[r"^(?:www\.)?deviantart\.com/[\w.-]+/art/[\w.-]+-\d+/?$"],
-        drop_params: &[],
+        keep_params: &[],
         clip_prefix: false,
     },
     Site {
@@ -192,7 +193,7 @@ pub static SITES: &[Site] = &[
             r"^(?:www\.|m\.)?twitch\.tv/\w+/clip/[\w-]+/?$",
             r"^m\.twitch\.tv/clip/[\w-]+/?$",
         ],
-        drop_params: &[],
+        keep_params: &[],
         clip_prefix: true,
     },
     Site {
@@ -205,7 +206,8 @@ pub static SITES: &[Site] = &[
         patterns: &[
             r"^(?:www\.|web\.|m\.)?facebook\.com/(?:share/[rvp]/[\w-]+|reel/\d+|watch/?|photo/?|permalink\.php|story\.php|[\w.]+/(?:posts|videos|photos)/.+|marketplace/.+)$",
         ],
-        drop_params: &["mibextid", "rdid"],
+        // watch/?v=, permalink.php?story_fbid=&id=, photo/?fbid=&set= do not work without them.
+        keep_params: &["v", "story_fbid", "id", "fbid", "set"],
         clip_prefix: false,
     },
     Site {
@@ -216,7 +218,7 @@ pub static SITES: &[Site] = &[
         alternatives: &["fxraffinity.net"],
         roots: &["furaffinity.net"],
         patterns: &[r"^(?:www\.)?furaffinity\.net/view/\d+/?$"],
-        drop_params: &[],
+        keep_params: &[],
         clip_prefix: false,
     },
     Site {
@@ -227,7 +229,7 @@ pub static SITES: &[Site] = &[
         alternatives: &[],
         roots: &["iwara.tv"],
         patterns: &[r"^(?:www\.)?iwara\.tv/video/\w+(?:/[\w-]+)?/?$"],
-        drop_params: &[],
+        keep_params: &[],
         clip_prefix: false,
     },
     Site {
@@ -241,7 +243,8 @@ pub static SITES: &[Site] = &[
             r"^(?:www\.|m\.)?bilibili\.com/(?:video/\w+|opus/\d+)/?$",
             r"^t\.bilibili\.com/\d+/?$",
         ],
-        drop_params: &["*"],
+        // Video part number.
+        keep_params: &["p"],
         clip_prefix: false,
     },
     Site {
@@ -252,7 +255,7 @@ pub static SITES: &[Site] = &[
         alternatives: &[],
         roots: &["pinterest.com"],
         patterns: &[r"^(?:www\.)?pinterest\.com/pin/\d+/?$"],
-        drop_params: &[],
+        keep_params: &[],
         clip_prefix: false,
     },
     Site {
@@ -263,7 +266,7 @@ pub static SITES: &[Site] = &[
         alternatives: &[],
         roots: &["ptt.cc"],
         patterns: &[r"^(?:www\.)?ptt\.cc/bbs/\w+/M\.\d+\.A\.\w+\.html$"],
-        drop_params: &[],
+        keep_params: &[],
         clip_prefix: false,
     },
 ];
@@ -283,8 +286,21 @@ static COMPILED: Lazy<Vec<Vec<Regex>>> = Lazy::new(|| {
 /// Subdomains that are dropped when the host is swapped (everything else, such as `vm.` or
 /// `clips.`, is kept).
 const DROPPED_SUBDOMAINS: &[&str] = &["www", "m", "mobile", "old", "new", "np", "web"];
-/// Tracking parameters removed from every rewritten link.
-const TRACKING_PARAMS: &[&str] = &["fbclid", "igsh", "igshid", "share_id", "gclid"];
+/// Tracking parameters removed from links rewritten by custom rules. Built-in sites instead keep
+/// only their `keep_params`, since their URLs are known; a custom rule's site may need its query.
+const TRACKING_PARAMS: &[&str] = &[
+    "fbclid", "gclid", "dclid", "gbraid", "wbraid", "msclkid", "yclid", "twclid", "ttclid", "li_fat_id",
+    "mc_cid", "mc_eid", "igsh", "igshid", "si", "share_id", "ref_src", "ref_url", "_ga", "_gl", "s_cid",
+];
+
+/// Which query parameters survive a rewrite.
+#[derive(Clone, Copy)]
+enum QueryPolicy<'a> {
+    /// Built-in site: keep only these.
+    KeepOnly(&'a [&'a str]),
+    /// Custom rule: keep everything except known tracking parameters.
+    DropTracking,
+}
 
 pub fn find_site(query: &str) -> Option<&'static Site> {
     let q = query.trim().to_ascii_lowercase();
@@ -350,12 +366,12 @@ fn subdomain_of<'a>(host: &'a str, root: &str) -> Option<&'a str> {
     rest.strip_suffix('.')
 }
 
-fn query_param_dropped(key: &str, drop: &[&str]) -> bool {
+fn query_param_kept(key: &str, policy: QueryPolicy) -> bool {
     let key = key.to_ascii_lowercase();
-    drop.contains(&"*")
-        || drop.contains(&key.as_str())
-        || TRACKING_PARAMS.contains(&key.as_str())
-        || key.starts_with("utm_")
+    match policy {
+        QueryPolicy::KeepOnly(keep) => keep.contains(&key.as_str()),
+        QueryPolicy::DropTracking => !(TRACKING_PARAMS.contains(&key.as_str()) || key.starts_with("utm_")),
+    }
 }
 
 /// Builds the rewritten URL: HTTPS, swapped host, filtered query.
@@ -363,7 +379,7 @@ fn build_fixed(
     url: &mut Url,
     sub: &str,
     domain: &str,
-    drop: &[&str],
+    policy: QueryPolicy,
     clip_prefix: bool,
 ) -> Option<String> {
     let mut sub = sub;
@@ -394,7 +410,7 @@ fn build_fixed(
         let kept: Vec<&str> = query
             .split('&')
             .filter(|p| !p.is_empty())
-            .filter(|p| !query_param_dropped(p.split('=').next().unwrap_or(""), drop))
+            .filter(|p| query_param_kept(p.split('=').next().unwrap_or(""), policy))
             .collect();
         if kept.is_empty() {
             url.set_query(None);
@@ -420,7 +436,7 @@ pub fn rewrite_url(raw: &str, cfg: &GuildLinkConfig) -> Option<String> {
             if subdomain_of(&host, to).is_some() || url.path().len() <= 1 {
                 return None;
             }
-            return build_fixed(&mut url, sub, to, &[], false);
+            return build_fixed(&mut url, sub, to, QueryPolicy::DropTracking, false);
         }
     }
 
@@ -436,7 +452,7 @@ pub fn rewrite_url(raw: &str, cfg: &GuildLinkConfig) -> Option<String> {
         if !COMPILED[idx].iter().any(|re| re.is_match(&target)) {
             continue;
         }
-        return build_fixed(&mut url, sub, &domain, site.drop_params, site.clip_prefix);
+        return build_fixed(&mut url, sub, &domain, QueryPolicy::KeepOnly(site.keep_params), site.clip_prefix);
     }
     None
 }
@@ -584,8 +600,6 @@ pub struct LinkFixer {
     configs: Mutex<HashMap<u64, Arc<GuildLinkConfig>>>,
     /// Bot-owned webhook per (non-thread) channel.
     webhooks: tokio::sync::Mutex<HashMap<ChannelId, Webhook>>,
-    /// webhook id -> whether PluralKit owns it.
-    pk_webhooks: Mutex<HashMap<WebhookId, bool>>,
 }
 
 impl LinkFixer {
@@ -594,7 +608,6 @@ impl LinkFixer {
             db,
             configs: Mutex::new(HashMap::new()),
             webhooks: tokio::sync::Mutex::new(HashMap::new()),
-            pk_webhooks: Mutex::new(HashMap::new()),
         }
     }
 
@@ -655,38 +668,6 @@ impl LinkFixer {
         };
         cache.insert(channel, webhook.clone());
         Ok(webhook)
-    }
-
-    /// True for messages proxied by PluralKit (or sent by PluralKit itself).
-    async fn is_pluralkit(&self, ctx: &serenity::Context, msg: &Message) -> bool {
-        let pk = config::get().pluralkit_uid;
-        if msg.author.id.get() == pk {
-            return true;
-        }
-        let Some(webhook_id) = msg.webhook_id else {
-            return false;
-        };
-        if msg.application_id.is_some_and(|a| a.get() == pk) {
-            return true;
-        }
-        if let Some(known) = self
-            .pk_webhooks
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .get(&webhook_id)
-        {
-            return *known;
-        }
-        let is_pk = match ctx.http.get_webhook(webhook_id).await {
-            Ok(w) => w.user.is_some_and(|u| u.id.get() == pk),
-            Err(_) => false,
-        };
-        let mut known = self.pk_webhooks.lock().unwrap_or_else(|e| e.into_inner());
-        if known.len() > 512 {
-            known.clear();
-        }
-        known.insert(webhook_id, is_pk);
-        is_pk
     }
 }
 
@@ -766,16 +747,13 @@ async fn handle_message(ctx: &serenity::Context, data: &Data, msg: &Message) -> 
     {
         return Ok(());
     }
-    if msg.author.id == ctx.cache.current_user().id {
+    // Only messages typed by real users: every bot and every webhook (including PluralKit
+    // proxies and our own reposts) is left alone.
+    if msg.author.bot || msg.webhook_id.is_some() {
         return Ok(());
     }
 
     let fixer = &data.linkfix;
-    let is_pk = fixer.is_pluralkit(ctx, msg).await;
-    // Bots are ignored; webhooks only when they are PluralKit's.
-    if (msg.author.bot || msg.webhook_id.is_some()) && !is_pk {
-        return Ok(());
-    }
 
     let cfg = fixer.config(guild_id.get())?;
     if !cfg.enabled || cfg.ignored.contains(&msg.channel_id.get()) {
@@ -796,10 +774,8 @@ async fn handle_message(ctx: &serenity::Context, data: &Data, msg: &Message) -> 
         && perms.contains(Permissions::MANAGE_MESSAGES);
     let use_webhook = cfg.mode == FixMode::Webhook
         && can_webhook
-        && !is_pk
         && msg.poll.is_none()
-        && msg.sticker_items.is_empty()
-        && msg.webhook_id.is_none();
+        && msg.sticker_items.is_empty();
 
     if use_webhook {
         match repost_via_webhook(ctx, data, msg, guild_id, &place, &rewrite).await {
@@ -1052,9 +1028,53 @@ mod tests {
             fix("https://x.com/a/status/9?s=20&t=abc").as_deref(),
             Some("https://fxtwitter.com/a/status/9")
         );
+        // Like embed-fixer, built-in sites keep no query parameters unless listed.
         assert_eq!(
             fix("https://x.com/a/status/9?s=20&lang=en").as_deref(),
-            Some("https://fxtwitter.com/a/status/9?lang=en")
+            Some("https://fxtwitter.com/a/status/9")
+        );
+        // The fragment is not tracking data and is kept.
+        assert_eq!(
+            fix("https://x.com/a/status/9?s=20#m").as_deref(),
+            Some("https://fxtwitter.com/a/status/9#m")
+        );
+    }
+
+    #[test]
+    fn unknown_parameters_are_stripped_but_needed_ones_kept() {
+        assert_eq!(
+            fix("https://www.instagram.com/p/Cabc/?img_index=3&igsh=a&hl=en").as_deref(),
+            Some("https://kkinstagram.com/p/Cabc/?img_index=3")
+        );
+        assert_eq!(
+            fix("https://bsky.app/profile/a.bsky.social/post/3k?ref_src=x&anything=1").as_deref(),
+            Some("https://bskx.app/profile/a.bsky.social/post/3k")
+        );
+        let mut cfg = GuildLinkConfig::default();
+        for site in ["facebook", "bilibili"] {
+            cfg.sites.insert(site.into(), SiteOverride { enabled: Some(true), domain: None });
+        }
+        assert_eq!(
+            fix_with("https://www.facebook.com/watch/?v=123&mibextid=abc&rdid=x", &cfg).as_deref(),
+            Some("https://facebed.seria.moe/watch/?v=123")
+        );
+        assert_eq!(
+            fix_with("https://www.facebook.com/permalink.php?story_fbid=1&id=2&ref=share", &cfg).as_deref(),
+            Some("https://facebed.seria.moe/permalink.php?story_fbid=1&id=2")
+        );
+        assert_eq!(
+            fix_with("https://www.bilibili.com/video/BV1xx?p=2&spm_id_from=333&vd_source=abc", &cfg).as_deref(),
+            Some("https://vxbilibili.com/video/BV1xx?p=2")
+        );
+    }
+
+    #[test]
+    fn custom_rules_keep_query_minus_tracking() {
+        let mut cfg = GuildLinkConfig::default();
+        cfg.rules.push(("example.com".into(), "fixed.example.org".into()));
+        assert_eq!(
+            fix_with("https://example.com/watch?v=1&si=abc&fbclid=z&utm_medium=y&list=2", &cfg).as_deref(),
+            Some("https://fixed.example.org/watch?v=1&list=2")
         );
     }
 
