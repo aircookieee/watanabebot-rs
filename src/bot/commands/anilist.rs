@@ -255,7 +255,7 @@ pub async fn handle_legacy_message(ctx: &serenity::Context, data: &Data, msg: &s
             } else {
                 format!("Anilist username `{username}` is already registered to another user.")
             };
-            channel.say(ctx, content).await?;
+            crate::bot::say_safe(ctx, channel, content).await?;
             return Ok(true);
         }
     }
@@ -266,12 +266,12 @@ pub async fn handle_legacy_message(ctx: &serenity::Context, data: &Data, msg: &s
         } else {
             format!("Could not unregister <@{user_id}>.")
         };
-        channel.say(ctx, content).await?;
+        crate::bot::say_safe(ctx, channel, content).await?;
         return Ok(true);
     }
 
     if sub.as_deref() == Some("update") {
-        let mut reply = channel.say(ctx, "Updating Anilist data...").await?;
+        let mut reply = crate::bot::say_safe(ctx, channel, "Updating Anilist data...").await?;
         let start = Instant::now();
         data.anilist.update_all_user_data().await?;
         let text = format!("Anilist data updated, took {}s.", start.elapsed().as_secs_f64().round() as u64);
@@ -291,12 +291,12 @@ pub async fn handle_legacy_message(ctx: &serenity::Context, data: &Data, msg: &s
                 channel.send_message(ctx, CreateMessage::new().embed(embed)).await?;
             }
             None => {
-                channel.say(ctx, format!("No {} found for \"{}\"", media_type.lower(), full_query)).await?;
+                crate::bot::say_safe(ctx, channel, format!("No {} found for \"{}\"", media_type.lower(), full_query)).await?;
             }
         }
         return Ok(true);
     }
 
-    channel.say(ctx, LEGACY_USAGE).await?;
+    crate::bot::say_safe(ctx, channel, LEGACY_USAGE).await?;
     Ok(true)
 }

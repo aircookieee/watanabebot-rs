@@ -507,10 +507,33 @@ async fn pay(ctx: &Ctx, session: &Session, headers: &HeaderMap, body: Body) -> A
     let guild = guild_id(ctx)?;
     let receiver = field_string(&body, "userId")?;
     let amount = field_i64(&body, "amount")?;
+    // Only real, non-bot members of the server can receive coins; otherwise junk ids would
+    // get wallets (and leaderboard rows), and "0123" would slip past the self-pay check.
+    let receiver_id = receiver
+        .trim()
+        .parse::<u64>()
+        .ok()
+        .filter(|id| *id != 0)
+        .ok_or_else(|| ApiError::bad("userId must be a Discord user id."))?;
+    let receiver = receiver_id.to_string();
+    if receiver == session.user_id {
+        return Err(ApiError::bad("You cannot send MugCoins to yourself."));
+    }
+    let guild_snowflake = guild.parse::<u64>().map_err(|_| ApiError::bad("Server is not configured."))?;
+    match ctx
+        .app
+        .http
+        .get_member(serenity::all::GuildId::new(guild_snowflake), serenity::all::UserId::new(receiver_id))
+        .await
+    {
+        Ok(member) if member.user.bot => return Err(ApiError::bad("You cannot send MugCoins to bots.")),
+        Ok(_) => {}
+        Err(_) => return Err(ApiError::bad("That user is not a member of the server.")),
+    }
     let ok = wallets::pay_user(
         &ctx.app.db,
         &session.user_id,
-        receiver.trim(),
+        &receiver,
         &guild,
         amount,
     )?;

@@ -767,6 +767,16 @@ async fn resolve_from_poll(
 
     ctx.defer().await?;
     let channel_id = ChannelId::new(channel_raw);
+    // The guild segment of a link is just text; check the channel really belongs here.
+    let channel_guild = channel_id
+        .to_channel(ctx)
+        .await
+        .map_err(|e| anyhow!("Could not fetch that channel: {e}"))?
+        .guild()
+        .map(|c| c.guild_id.to_string());
+    if channel_guild.as_deref() != Some(guild.as_str()) {
+        bail!("That message is not in this server.");
+    }
     let mut message = channel_id
         .message(ctx, MessageId::new(message_raw))
         .await
@@ -775,9 +785,13 @@ async fn resolve_from_poll(
         bail!("That message does not contain a poll.");
     }
 
-    // Make sure the results are final: the poll has ended, or the bot ends its own poll now.
+    // Only Discord's finalized counts are exact; payouts are irreversible, so never resolve on
+    // provisional counts (an expired-but-not-finalized poll is still being tallied).
     let (finalized, expired) = message.poll.as_deref().map(|p| (poll_is_finalized(p), poll_has_expired(p))).unwrap_or_default();
-    if !finalized && !expired {
+    if !finalized {
+        if expired {
+            bail!("That poll has ended and Discord is still finalizing the results. Try again in a minute.");
+        }
         if end_now != Some(true) {
             bail!("That poll is still open. Wait for it to end, or set end_now to true if I created it.");
         }
@@ -785,6 +799,9 @@ async fn resolve_from_poll(
             bail!("I can only end polls that I created. End the poll yourself, then run this command again.");
         }
         message = message.end_poll(ctx).await.map_err(|e| anyhow!("Could not end the poll: {e}"))?;
+        if !message.poll.as_deref().is_some_and(poll_is_finalized) {
+            bail!("Poll ended. Discord is finalizing the results; run this command again in a minute (without end_now).");
+        }
     }
 
     let Some(discord_poll) = message.poll.as_deref() else {
@@ -855,7 +872,7 @@ async fn resolve_from_poll(
 
 async fn announce_poll_result(http: &serenity::Http, poll_channel: ChannelId, content: &str) {
     let content = tournaments::truncate_chars(content, 2000);
-    if let Err(err) = poll_channel.say(http, content.clone()).await {
+    if let Err(err) = crate::bot::say_safe(http, poll_channel, content.clone()).await {
         tracing::error!("failed to announce poll result in {poll_channel}: {err}");
     }
     let updates = config::get().channels.tournament_updates_channel_id;

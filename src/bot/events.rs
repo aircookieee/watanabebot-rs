@@ -46,6 +46,11 @@ async fn on_message(ctx: &serenity::Context, data: &Data, msg: &Message) -> Resu
     if msg.author.bot && msg.webhook_id.is_none() {
         return Ok(());
     }
+    // Our own webhook messages (link-fix reposts) repeat a user's text that was already
+    // handled when the original arrived; processing them again would double-answer commands.
+    if msg.webhook_id.is_some() && is_own_application(ctx, msg) {
+        return Ok(());
+    }
 
     reward_chat_message(data, msg);
 
@@ -134,6 +139,13 @@ async fn handle_legacy_yousoro(ctx: &serenity::Context, data: &Data, msg: &Messa
     Ok(true)
 }
 
+/// True if the message was sent by a webhook this bot's application owns.
+fn is_own_application(ctx: &serenity::Context, msg: &Message) -> bool {
+    let Some(app_id) = msg.application_id else { return false };
+    let own = ctx.http.application_id().map(|id| id.get()).unwrap_or_else(|| ctx.cache.current_user().id.get());
+    app_id.get() == own
+}
+
 fn can_manage_guild(ctx: &serenity::Context, msg: &Message) -> bool {
     #[allow(deprecated)]
     msg.author_permissions(&ctx.cache)
@@ -210,7 +222,7 @@ async fn translate_webhook_message(ctx: &serenity::Context, data: &Data, msg: &M
             } else {
                 translation
             };
-            if let Err(err) = msg.channel_id.say(ctx, content).await {
+            if let Err(err) = crate::bot::say_safe(ctx, msg.channel_id, content).await {
                 tracing::error!("failed to send translation: {err}");
             }
         }

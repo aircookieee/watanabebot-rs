@@ -61,7 +61,7 @@ pub async fn handle_legacy_message(ctx: &serenity::Context, data: &Data, msg: &s
         let parts: Vec<&str> = content.trim().split(' ').collect();
         let args = &parts[1..];
         if args.is_empty() {
-            channel.say(ctx, "Usage: `!define <word>`").await?;
+            crate::bot::say_safe(ctx, channel, "Usage: `!define <word>`").await?;
             return Ok(true);
         }
         let word = args.join(" ");
@@ -70,7 +70,7 @@ pub async fn handle_legacy_message(ctx: &serenity::Context, data: &Data, msg: &s
                 channel.send_message(ctx, CreateMessage::new().embed(embed)).await?;
             }
             None => {
-                channel.say(ctx, format!("No definitions found for \"{word}\"")).await?;
+                crate::bot::say_safe(ctx, channel, format!("No definitions found for \"{word}\"")).await?;
             }
         }
         return Ok(true);
@@ -79,16 +79,16 @@ pub async fn handle_legacy_message(ctx: &serenity::Context, data: &Data, msg: &s
     if content.starts_with("!pick") {
         let raw = content[5..].trim();
         if raw.is_empty() {
-            channel.say(ctx, "Usage: `!pick option1, option2, option3`").await?;
+            crate::bot::say_safe(ctx, channel, "Usage: `!pick option1, option2, option3`").await?;
             return Ok(true);
         }
         let options = parse_options(raw);
         if options.len() < 2 {
-            channel.say(ctx, PICK_TOO_FEW).await?;
+            crate::bot::say_safe(ctx, channel, PICK_TOO_FEW).await?;
             return Ok(true);
         }
         let choice = pick_one(&options);
-        channel.say(ctx, format!("I pick: {choice}")).await?;
+        crate::bot::say_safe(ctx, channel, format!("I pick: {choice}")).await?;
         return Ok(true);
     }
 

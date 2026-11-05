@@ -116,6 +116,18 @@ pub struct DailyClaimRow {
 // Connection-level wallet primitives
 // ---------------------------------------------------------------------------------------------
 
+/// Largest single credit/debit/bet. Keeps sums of many amounts far from i64 overflow.
+pub const MAX_AMOUNT: i64 = 1_000_000_000_000;
+/// Largest balance a wallet may hold.
+pub const MAX_BALANCE: i64 = 1_000_000_000_000_000;
+
+fn check_amount(amount: i64) -> anyhow::Result<()> {
+    if amount > MAX_AMOUNT {
+        bail!("Amount cannot exceed {MAX_AMOUNT} MugCoins.");
+    }
+    Ok(())
+}
+
 /// Returns the wallet, creating it with the configured starting balance if missing.
 pub fn get_or_create_wallet(conn: &Connection, user_id: &str, guild_id: &str) -> anyhow::Result<Wallet> {
     let existing = conn
@@ -150,9 +162,13 @@ pub fn add_currency(
     reason: &str,
     reference_id: Option<&str>,
 ) -> anyhow::Result<i64> {
+    check_amount(amount)?;
     let wallet = get_or_create_wallet(conn, user_id, guild_id)?;
     if amount <= 0 {
         return Ok(wallet.balance);
+    }
+    if wallet.balance > MAX_BALANCE - amount {
+        bail!("That would exceed the maximum balance of {MAX_BALANCE} MugCoins.");
     }
     let new_balance = wallet.balance + amount;
     let new_earned = wallet.total_earned + amount;
@@ -177,6 +193,7 @@ pub fn spend_currency(
     reason: &str,
     reference_id: Option<&str>,
 ) -> anyhow::Result<bool> {
+    check_amount(amount)?;
     if amount <= 0 {
         return Ok(false);
     }
@@ -201,6 +218,9 @@ pub fn spend_currency(
 pub fn set_balance(conn: &Connection, user_id: &str, guild_id: &str, amount: i64, reason: &str) -> anyhow::Result<()> {
     if amount < 0 {
         return Ok(());
+    }
+    if amount > MAX_BALANCE {
+        bail!("Balance cannot exceed {MAX_BALANCE} MugCoins.");
     }
     let wallet = get_or_create_wallet(conn, user_id, guild_id)?;
     let diff = amount - wallet.balance;
@@ -227,12 +247,16 @@ pub fn transfer_currency(
     guild_id: &str,
     amount: i64,
 ) -> anyhow::Result<bool> {
+    check_amount(amount)?;
     if amount <= 0 || sender_id == receiver_id {
         return Ok(false);
     }
     let sender = get_or_create_wallet(conn, sender_id, guild_id)?;
     if sender.balance < amount {
         return Ok(false);
+    }
+    if get_or_create_wallet(conn, receiver_id, guild_id)?.balance > MAX_BALANCE - amount {
+        bail!("That would exceed the recipient's maximum balance of {MAX_BALANCE} MugCoins.");
     }
     let receiver = get_or_create_wallet(conn, receiver_id, guild_id)?;
 

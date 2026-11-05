@@ -61,7 +61,11 @@ cargo run --release
 
 Point `DATA_DIR` (or mount the volume) at the old `data/` directory. The existing
 `watanabebot.db` is used in place: the schema is the same and new features only add tables.
-The `.env` variable names are unchanged.
+The `.env` variable names are unchanged (`SESSION_SECRET` is no longer used).
+
+The Rust bot runs SQLite in WAL mode, so the live `watanabebot.db` may not contain the latest
+writes on its own. To roll back to the TypeScript bot, use the newest file in `data/backups/`
+(each one is a complete, self-contained copy taken at startup), not the live file.
 
 ### Discord setup
 

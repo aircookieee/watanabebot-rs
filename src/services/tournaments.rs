@@ -1203,7 +1203,7 @@ pub async fn announce(http: &serenity::Http, content: &str) {
         return;
     };
     let content = truncate_chars(content, 2000);
-    if let Err(err) = serenity::ChannelId::new(channel_id).say(http, content).await {
+    if let Err(err) = crate::bot::say_safe(http, serenity::ChannelId::new(channel_id), content).await {
         tracing::error!("failed to send tournament update: {err}");
     }
 }

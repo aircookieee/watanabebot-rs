@@ -52,6 +52,23 @@ impl AppState {
     }
 }
 
+/// Mentions the bot may trigger: user pings only, never @everyone/@here or roles, so user text
+/// echoed back (pick options, search terms, translations, contestant names) cannot mass-ping.
+pub fn safe_mentions() -> serenity::CreateAllowedMentions {
+    serenity::CreateAllowedMentions::new().all_users(true)
+}
+
+/// `ChannelId::say` with [`safe_mentions`]. Use this for every plain channel message.
+pub async fn say_safe(
+    cache_http: impl serenity::CacheHttp,
+    channel: serenity::ChannelId,
+    content: impl Into<String>,
+) -> serenity::Result<serenity::Message> {
+    channel
+        .send_message(cache_http, serenity::CreateMessage::new().content(content).allowed_mentions(safe_mentions()))
+        .await
+}
+
 pub async fn run(state: Data) -> anyhow::Result<()> {
     let cfg = config::get();
 
@@ -70,6 +87,7 @@ pub async fn run(state: Data) -> anyhow::Result<()> {
             on_error: |err| Box::pin(on_error(err)),
             // Legacy `!` commands are parsed by hand in `events::on_message`.
             prefix_options: poise::PrefixFrameworkOptions { prefix: None, ..Default::default() },
+            allowed_mentions: Some(safe_mentions()),
             ..Default::default()
         })
         .setup(move |ctx, ready, framework| {

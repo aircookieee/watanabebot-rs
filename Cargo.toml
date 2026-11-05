@@ -55,6 +55,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 [profile.release]
 lto = "thin"
 strip = true
+# Panic (and roll back the transaction) instead of silently wrapping on arithmetic overflow.
+overflow-checks = true
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

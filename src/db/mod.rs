@@ -42,11 +42,12 @@ impl Db {
             );
         }
 
-        if existed {
-            create_startup_backup(path)?;
-        }
-
         let conn = Connection::open(path).with_context(|| format!("opening {}", path.display()))?;
+        if existed {
+            // Back up through SQLite (not a file copy) so data still in the -wal file from the
+            // previous run is included, and the backup is a single self-contained file.
+            create_startup_backup(&conn, path)?;
+        }
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
@@ -167,17 +168,69 @@ pub fn add_column_if_missing(conn: &Connection, table: &str, column: &str, decl:
     Ok(())
 }
 
-fn create_startup_backup(path: &Path) -> anyhow::Result<()> {
+/// Startup backups kept in `data/backups/`; older ones are deleted.
+const KEEP_BACKUPS: usize = 30;
+
+fn create_startup_backup(conn: &Connection, path: &Path) -> anyhow::Result<()> {
     let dir = path.parent().unwrap_or(Path::new(".")).join("backups");
     std::fs::create_dir_all(&dir)?;
     let stamp = chrono::Utc::now().format("%Y-%m-%dT%H-%M-%S-%3fZ");
     let backup = dir.join(format!("watanabebot.{stamp}.db"));
-    std::fs::copy(path, &backup).with_context(|| format!("backing up database to {}", backup.display()))?;
+    conn.execute("VACUUM INTO ?", [backup.to_string_lossy()])
+        .with_context(|| format!("backing up database to {}", backup.display()))?;
     tracing::info!("Created database startup backup: {}", backup.display());
+
+    let mut backups: Vec<_> = std::fs::read_dir(&dir)?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with("watanabebot.") && n.ends_with(".db"))
+        })
+        .collect();
+    // Timestamped names sort chronologically.
+    backups.sort();
+    let excess = backups.len().saturating_sub(KEEP_BACKUPS);
+    for old in backups.into_iter().take(excess) {
+        if let Err(err) = std::fs::remove_file(&old) {
+            tracing::warn!("could not delete old backup {}: {err}", old.display());
+        }
+    }
     Ok(())
 }
 
 /// Current UTC time in the `YYYY-MM-DD HH:MM:SS` format SQLite's CURRENT_TIMESTAMP uses.
 pub fn now_sql() -> String {
     chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn startup_backup_includes_wal_data() {
+        let dir = std::env::temp_dir().join(format!("watanabebot-db-backup-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut cfg = Config::from_env();
+        cfg.paths.database_path = dir.join("test.db");
+        cfg.production = false;
+        cfg.legacy_anilist_map_path = None;
+
+        // First boot: write a row that may still sit in the -wal file when the process "dies".
+        let db = Db::open(&cfg).unwrap();
+        db.set_guild_config(42, Some(7), ReactMode::Here).unwrap();
+        std::mem::forget(db); // simulate a kill: no clean close, no checkpoint
+
+        // Second boot backs up through SQLite; the backup must contain the row.
+        let _db = Db::open(&cfg).unwrap();
+        let backups: Vec<_> = std::fs::read_dir(dir.join("backups")).unwrap().flatten().collect();
+        assert_eq!(backups.len(), 1);
+        let backup = Connection::open(backups[0].path()).unwrap();
+        let mode: String = backup
+            .query_row("SELECT mode FROM guild_config WHERE guild_id = '42'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(mode, "here");
+    }
 }
