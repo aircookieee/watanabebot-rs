@@ -170,12 +170,15 @@ pub fn add_column_if_missing(conn: &Connection, table: &str, column: &str, decl:
 
 /// Startup backups kept in `data/backups/`; older ones are deleted.
 const KEEP_BACKUPS: usize = 30;
+const BACKUP_PREFIX: &str = "watanabebot-rs.";
 
 fn create_startup_backup(conn: &Connection, path: &Path) -> anyhow::Result<()> {
     let dir = path.parent().unwrap_or(Path::new(".")).join("backups");
     std::fs::create_dir_all(&dir)?;
     let stamp = chrono::Utc::now().format("%Y-%m-%dT%H-%M-%S-%3fZ");
-    let backup = dir.join(format!("watanabebot.{stamp}.db"));
+    // Own prefix: the TypeScript bot wrote `watanabebot.<stamp>.db` into the same folder, and
+    // pruning must never touch those.
+    let backup = dir.join(format!("{BACKUP_PREFIX}{stamp}.db"));
     conn.execute("VACUUM INTO ?", [backup.to_string_lossy()])
         .with_context(|| format!("backing up database to {}", backup.display()))?;
     tracing::info!("Created database startup backup: {}", backup.display());
@@ -186,7 +189,7 @@ fn create_startup_backup(conn: &Connection, path: &Path) -> anyhow::Result<()> {
         .filter(|p| {
             p.file_name()
                 .and_then(|n| n.to_str())
-                .is_some_and(|n| n.starts_with("watanabebot.") && n.ends_with(".db"))
+                .is_some_and(|n| n.starts_with(BACKUP_PREFIX) && n.ends_with(".db"))
         })
         .collect();
     // Timestamped names sort chronologically.
@@ -223,9 +226,19 @@ mod tests {
         db.set_guild_config(42, Some(7), ReactMode::Here).unwrap();
         std::mem::forget(db); // simulate a kill: no clean close, no checkpoint
 
+        // A TypeScript-era backup in the same folder must survive pruning.
+        std::fs::create_dir_all(dir.join("backups")).unwrap();
+        let legacy = dir.join("backups").join("watanabebot.2020-01-01T00-00-00-000Z.db");
+        std::fs::write(&legacy, b"legacy").unwrap();
+
         // Second boot backs up through SQLite; the backup must contain the row.
         let _db = Db::open(&cfg).unwrap();
-        let backups: Vec<_> = std::fs::read_dir(dir.join("backups")).unwrap().flatten().collect();
+        assert!(legacy.exists());
+        let backups: Vec<_> = std::fs::read_dir(dir.join("backups"))
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().starts_with(BACKUP_PREFIX))
+            .collect();
         assert_eq!(backups.len(), 1);
         let backup = Connection::open(backups[0].path()).unwrap();
         let mode: String = backup
