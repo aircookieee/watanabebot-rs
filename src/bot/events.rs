@@ -193,6 +193,12 @@ async fn react_to_summons(
     Ok(())
 }
 
+/// The emoji's name from the cached guilds, checking the message's guild first.
+fn emoji_name(ctx: &serenity::Context, guild: Option<serenity::GuildId>, id: serenity::EmojiId) -> Option<String> {
+    let lookup = |g: serenity::GuildId| ctx.cache.guild(g).and_then(|g| g.emojis.get(&id).map(|e| e.name.clone()));
+    guild.and_then(lookup).or_else(|| ctx.cache.guilds().into_iter().find_map(lookup))
+}
+
 /// True only for an explicit user mention of the bot in the text (`<@id>` / `<@!id>`).
 /// Discord's `mentions` list also contains reply targets, and `mention_everyone` /
 /// `mention_roles` cover @everyone/@here/roles; none of those count.
@@ -202,7 +208,11 @@ fn is_direct_ping(content: &str, bot_id: serenity::UserId) -> bool {
 }
 
 async fn react(ctx: &serenity::Context, msg: &Message, emoji: serenity::EmojiId) {
-    let reaction = ReactionType::Custom { animated: false, id: emoji, name: None };
+    // Discord's reaction endpoint wants `name:id`; an empty name is rejected as "Unknown
+    // Emoji". It matches on the id, so any name works when the emoji is not in our cache
+    // (e.g. an application emoji).
+    let name = emoji_name(ctx, msg.guild_id, emoji).unwrap_or_else(|| "_".to_string());
+    let reaction = ReactionType::Custom { animated: false, id: emoji, name: Some(name) };
     if let Err(err) = msg.react(ctx, reaction).await {
         tracing::warn!("failed to react in {}: {err}", msg.channel_id);
     }

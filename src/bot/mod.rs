@@ -86,7 +86,12 @@ pub async fn run(state: Data) -> anyhow::Result<()> {
             event_handler: |ctx, event, _framework, data| Box::pin(on_event(ctx, event, data)),
             on_error: |err| Box::pin(on_error(err)),
             // Legacy `!` commands are parsed by hand in `events::on_message`.
-            prefix_options: poise::PrefixFrameworkOptions { prefix: None, ..Default::default() },
+            prefix_options: poise::PrefixFrameworkOptions {
+                prefix: None,
+                // Otherwise poise treats every @You-chan ping as a prefix command attempt.
+                mention_as_prefix: false,
+                ..Default::default()
+            },
             allowed_mentions: Some(safe_mentions()),
             ..Default::default()
         })
