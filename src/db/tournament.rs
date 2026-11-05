@@ -317,7 +317,7 @@ pub fn create_next_round_from_winners(conn: &Connection, tournament_id: i64) -> 
     }
 
     let winners: Vec<String> = current_matches.iter().filter_map(|m| m.winner.clone()).collect();
-    if winners.len() % 2 != 0 {
+    if !winners.len().is_multiple_of(2) {
         bail!("Winner count must be even to advance the round.");
     }
 

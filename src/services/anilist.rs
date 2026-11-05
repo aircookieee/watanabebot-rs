@@ -21,7 +21,7 @@ const COMMAND_REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);
 const MEDIA_CACHE_TTL_SECS: i64 = 24 * 60 * 60;
 const TARGET_REQUESTS_PER_MINUTE: u64 = 25;
 /// ceil(60000 / 25)
-const BASE_DELAY_MS: u64 = (60_000 + TARGET_REQUESTS_PER_MINUTE - 1) / TARGET_REQUESTS_PER_MINUTE;
+const BASE_DELAY_MS: u64 = 60_000_u64.div_ceil(TARGET_REQUESTS_PER_MINUTE);
 const DELAY_PER_USER_MS: u64 = 100;
 const MAX_DELAY_MS: u64 = 10_000;
 const PREWARM_DELAY: Duration = Duration::from_secs(4);

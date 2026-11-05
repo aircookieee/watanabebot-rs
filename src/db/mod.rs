@@ -72,21 +72,6 @@ impl Db {
         Ok(out)
     }
 
-    // ---- settings (global key/value) ----
-
-    pub fn get_setting(&self, key: &str) -> anyhow::Result<Option<String>> {
-        Ok(self
-            .conn()
-            .query_row("SELECT value FROM settings WHERE key = ?", [key], |r| r.get(0))
-            .optional()?)
-    }
-
-    pub fn set_setting(&self, key: &str, value: &str) -> anyhow::Result<()> {
-        self.conn()
-            .execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", [key, value])?;
-        Ok(())
-    }
-
     // ---- guild_config (reaction channel mode) ----
 
     pub fn get_guild_config(&self, guild_id: u64) -> anyhow::Result<Option<GuildConfig>> {

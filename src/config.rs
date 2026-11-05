@@ -90,7 +90,6 @@ pub struct CurrencyConfig {
 pub struct WebConfig {
     pub port: u16,
     pub base_url: String,
-    pub session_secret: String,
     pub favicon_path: PathBuf,
 }
 
@@ -168,7 +167,6 @@ impl Config {
             web: WebConfig {
                 port,
                 base_url: env_opt("WEB_BASE_URL").unwrap_or_else(|| format!("http://localhost:{port}")),
-                session_secret: env_opt("SESSION_SECRET").unwrap_or_else(|| "dev-session-secret".into()),
                 favicon_path: env_opt("WEB_FAVICON_PATH")
                     .map(PathBuf::from)
                     .unwrap_or_else(|| resources_dir.join("yousoro2.png")),
