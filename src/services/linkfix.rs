@@ -566,6 +566,10 @@ fn trim_url(url: &str) -> &str {
 /// Replaces every fixable link in `content`. Returns `None` if nothing changed.
 pub fn rewrite_content(content: &str, cfg: &GuildLinkConfig) -> Option<Rewrite> {
     let skip = skip_ranges(content);
+    // `||` markers outside code pair up in order, like Discord does; URLs never contain `|`.
+    let markers: Vec<usize> =
+        content.match_indices("||").map(|(i, _)| i).filter(|i| !skip.iter().any(|r| r.contains(i))).collect();
+    let spoilers: Vec<Range<usize>> = markers.chunks_exact(2).map(|p| p[0] + 2..p[1]).collect();
     let mut text = String::with_capacity(content.len() + 32);
     let mut links = Vec::new();
     let mut last = 0;
@@ -578,7 +582,7 @@ pub fn rewrite_content(content: &str, cfg: &GuildLinkConfig) -> Option<Rewrite> 
         let Some(fixed) = rewrite_url(raw, cfg) else {
             continue;
         };
-        let spoiler = content[..m.start()].ends_with("||") && content[end..].starts_with("||");
+        let spoiler = spoilers.iter().any(|r| r.contains(&m.start()));
         text.push_str(&content[last..m.start()]);
         text.push_str(&fixed);
         last = end;
@@ -1255,6 +1259,13 @@ mod tests {
         assert!(rw.links[0].spoiler);
         let rw = rewrite_content("https://x.com/a/status/1", &GuildLinkConfig::default()).unwrap();
         assert!(!rw.links[0].spoiler);
+        let rw = rewrite_content(
+            "|| look https://x.com/a/status/1 ||\n|| `||` || https://x.com/b/status/2",
+            &GuildLinkConfig::default(),
+        )
+        .unwrap();
+        assert!(rw.links[0].spoiler);
+        assert!(!rw.links[1].spoiler);
     }
 
     #[test]

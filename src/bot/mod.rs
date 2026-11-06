@@ -99,17 +99,27 @@ pub async fn run(state: Data) -> anyhow::Result<()> {
             Box::pin(async move {
                 tracing::info!("Logged in as {} ({})", ready.user.name, ready.user.id);
                 let commands = &framework.options().commands;
-                match cfg.discord.guild_id {
+                // Economy commands stay in one guild; everything else is global so every server gets it.
+                let (guild_only, global): (Vec<_>, Vec<_>) =
+                    commands.iter().partition(|c| matches!(c.name.as_str(), "mugcoin" | "tournament"));
+                let build = |cmds: Vec<&poise::Command<_, _>>| -> Vec<serenity::CreateCommand> {
+                    cmds.into_iter()
+                        .flat_map(|c| poise::builtins::create_application_commands(std::slice::from_ref(c)))
+                        .collect()
+                };
+                serenity::Command::set_global_commands(ctx, build(global)).await?;
+                tracing::info!("Global commands deployed");
+                let economy_guild = cfg.currency.guild_id.or(cfg.discord.guild_id);
+                // Clear old guild-scoped copies of the global commands so they don't show twice.
+                if let Some(old) = cfg.discord.guild_id.filter(|g| Some(*g) != economy_guild) {
+                    old.set_commands(ctx, vec![]).await?;
+                }
+                match economy_guild {
                     Some(guild_id) => {
-                        poise::builtins::register_in_guild(ctx, commands, guild_id).await?;
-                        tracing::info!("Guild commands deployed");
-                        // Avoid duplicates if commands were ever registered globally.
-                        serenity::Command::set_global_commands(ctx, vec![]).await?;
+                        guild_id.set_commands(ctx, build(guild_only)).await?;
+                        tracing::info!("Economy commands deployed to guild {guild_id}");
                     }
-                    None => {
-                        poise::builtins::register_globally(ctx, commands).await?;
-                        tracing::info!("Global commands deployed");
-                    }
+                    None => tracing::warn!("No CURRENCY_GUILD_ID/DISCORD_GUILD_ID: mugcoin/tournament not registered"),
                 }
                 Ok(setup_state)
             })
