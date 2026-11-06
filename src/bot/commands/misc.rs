@@ -76,8 +76,8 @@ pub async fn handle_legacy_message(ctx: &serenity::Context, data: &Data, msg: &s
         return Ok(true);
     }
 
-    if content.starts_with("!pick") {
-        let raw = content[5..].trim();
+    if let Some(rest) = content.strip_prefix("!pick") {
+        let raw = rest.trim();
         if raw.is_empty() {
             crate::bot::say_safe(ctx, channel, "Usage: `!pick option1, option2, option3`").await?;
             return Ok(true);

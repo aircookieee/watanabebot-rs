@@ -569,7 +569,7 @@ pub fn rewrite_content(content: &str, cfg: &GuildLinkConfig) -> Option<Rewrite> 
     // `||` markers outside code pair up in order, like Discord does; URLs never contain `|`.
     let markers: Vec<usize> =
         content.match_indices("||").map(|(i, _)| i).filter(|i| !skip.iter().any(|r| r.contains(i))).collect();
-    let spoilers: Vec<Range<usize>> = markers.chunks_exact(2).map(|p| p[0] + 2..p[1]).collect();
+    let spoilers: Vec<Range<usize>> = markers.as_chunks::<2>().0.iter().map(|[a, b]| a + 2..*b).collect();
     let mut text = String::with_capacity(content.len() + 32);
     let mut links = Vec::new();
     let mut last = 0;

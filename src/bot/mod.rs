@@ -59,6 +59,7 @@ pub fn safe_mentions() -> serenity::CreateAllowedMentions {
 }
 
 /// `ChannelId::say` with [`safe_mentions`]. Use this for every plain channel message.
+#[allow(clippy::result_large_err)] // serenity's own error type; boxing it here buys nothing.
 pub async fn say_safe(
     cache_http: impl serenity::CacheHttp,
     channel: serenity::ChannelId,

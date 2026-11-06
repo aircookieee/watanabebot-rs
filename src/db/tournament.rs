@@ -330,10 +330,8 @@ pub fn create_next_round_from_winners(conn: &Connection, tournament_id: i64) -> 
         params![tournament_id, next_round],
     )?;
 
-    let mut next_match_number = 1;
-    for pair in winners.chunks(2) {
+    for (next_match_number, pair) in (1..).zip(winners.chunks(2)) {
         add_tournament_match(conn, tournament_id, next_match_number, &pair[0], &pair[1], next_round)?;
-        next_match_number += 1;
     }
     Ok((next_round, (winners.len() / 2) as i64))
 }

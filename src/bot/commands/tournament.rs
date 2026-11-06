@@ -1006,7 +1006,7 @@ fn reward_poll_vote(ctx: &serenity::Context, data: &Data, event: &serenity::Mess
     }
     let message_id = event.message_id.to_string();
     let tracked = tournaments::get_match_poll_by_message(&data.db, &message_id)?;
-    if !tracked.is_some_and(|p| p.status == POLL_ACTIVE) {
+    if tracked.is_none_or(|p| p.status != POLL_ACTIVE) {
         return Ok(());
     }
     let guild = event.guild_id.map(|g| g.to_string()).unwrap_or_default();
